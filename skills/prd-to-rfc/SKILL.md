@@ -1,10 +1,6 @@
 ---
 name: prd-to-rfc
-description: |
-  Automate PRD-to-RFC workflow. Use when asked to create an RFC from a PRD,
-  convert PRD to technical spec, or phrases like "prd to rfc", "create rfc",
-  "rfc from prd". Pipeline: gather PRD → explore codebase → grill open
-  decisions → draft RFC (template) → humanize → output (markdown or Lark doc).
+description: "Automate PRD-to-RFC workflow. Use when asked to create an RFC from a PRD, convert PRD to technical spec, or phrases like 'prd to rfc', 'create rfc', 'rfc from prd'. Pipeline: gather PRD → explore codebase → grill open decisions → draft RFC (template) → humanize → output (markdown or Lark doc)."
 allowed-tools: >
   Read, Write, Edit, Grep, Glob,
   mcp__lark-mcp__docx_v1_document_rawContent,
