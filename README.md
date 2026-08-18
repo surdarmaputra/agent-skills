@@ -126,10 +126,20 @@ cat ~/agent-skills/skills/grill-me/SKILL.md >> .clinerules
 ## Contributing a skill
 
 1. Clone this repo
-2. Open a Claude Code session in the repo root
-3. Run `/add-skill` — it scaffolds the file structure and checks for quality
-4. Run `/verify-project` before committing — ensures no secrets, PII, or org-specific content
-5. Submit a PR
+2. Install [Lefthook](https://github.com/evilmartians/lefthook) and activate the hooks:
+   ```bash
+   # macOS
+   brew install lefthook
+   # or: npm i -g @evilmartians/lefthook
+
+   lefthook install
+   ```
+3. Open a Claude Code session in the repo root
+4. Run `/add-skill` — it scaffolds the file structure and checks for quality
+5. Push — Lefthook runs `scripts/verify-project.sh` automatically before every push and blocks if issues are found
+6. Submit a PR
+
+> **Skip the hook once (not recommended):** `git push --no-verify`
 
 ### Skill requirements
 
