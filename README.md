@@ -15,28 +15,46 @@ A library of reusable agent skills — structured instruction sets that extend L
 
 ## Quickstart: Install skills
 
-### Claude Code (primary target)
-
-Skills in this repo follow the Claude Code skill format. Install globally or per-project.
-
-**Global install** (available in all your projects):
+### 1. Clone the repo
 
 ```bash
-# Clone repo
 git clone https://github.com/surdarmaputra/agent-skills.git ~/agent-skills
-
-# Symlink or copy a skill into Claude Code's global skills dir
-mkdir -p ~/.claude/skills
-cp -r ~/agent-skills/skills/code-review-enhanced ~/.claude/skills/
-cp -r ~/agent-skills/skills/grill-me ~/.claude/skills/
-# ... repeat for any skill you want
 ```
 
-**Per-project install** (available only in one project):
+### 2. List available skills
 
 ```bash
-mkdir -p .claude/skills
-cp -r ~/agent-skills/skills/grill-me .claude/skills/
+bash ~/agent-skills/scripts/install.sh --list
+```
+
+```
+Available skills:
+  code-review-enhanced           Review diffs with per-language guides and quality scoring
+  grill-me                       Relentless one-question-at-a-time interrogation of a plan
+  prd-to-rfc                     Convert PRDs to structured RFCs
+  skill-creator-compact          Create and iterate on skills with terse workflow
+```
+
+### 3. Install the skills you want
+
+**Global** — available in all your projects:
+
+```bash
+# One skill
+bash ~/agent-skills/scripts/install.sh grill-me
+
+# Multiple skills
+bash ~/agent-skills/scripts/install.sh grill-me code-review-enhanced
+
+# Everything
+bash ~/agent-skills/scripts/install.sh --all
+```
+
+**Project-local** — only available in the current project:
+
+```bash
+cd your-project
+bash ~/agent-skills/scripts/install.sh --project grill-me
 ```
 
 Then invoke with a slash command in Claude Code:
@@ -46,27 +64,45 @@ Then invoke with a slash command in Claude Code:
 /code-review-enhanced
 ```
 
-**Keep skills updated:**
+### 4. Update installed skills
+
+Pull the latest from this repo, then re-run the same install command — it overwrites in place.
 
 ```bash
+# Pull updates
 cd ~/agent-skills && git pull
-# Re-copy any skills you want updated
-cp -r ~/agent-skills/skills/code-review-enhanced ~/.claude/skills/
+
+# Update all skills you already have installed (global)
+bash ~/agent-skills/scripts/install.sh --update
+
+# Update all skills in a project
+cd your-project
+bash ~/agent-skills/scripts/install.sh --project --update
+
+# Or update specific skills
+bash ~/agent-skills/scripts/install.sh grill-me code-review-enhanced
 ```
+
+`--update` only touches skills already present in the destination — it won't add new ones.
 
 ---
 
+## Install for other coding agents
+
+First clone the repo as above, then follow the agent-specific steps.
+
 ### Cursor
 
-Cursor uses `.cursor/rules/*.mdc` files. Convert a skill to a Cursor rule by copying its body into an `.mdc` file:
+Cursor reads `.cursor/rules/*.mdc`. Strip the YAML frontmatter and save as an `.mdc` file:
 
 ```bash
 mkdir -p .cursor/rules
-# Copy the skill body (without frontmatter) into a rule file
-tail -n +5 ~/agent-skills/skills/grill-me/SKILL.md > .cursor/rules/grill-me.mdc
+# Skip the frontmatter (lines between the --- delimiters)
+awk '/^---/{p++; next} p>=2' ~/agent-skills/skills/grill-me/SKILL.md \
+  > .cursor/rules/grill-me.mdc
 ```
 
-Reference the rule in Cursor's settings or prepend it to a prompt manually.
+To update: re-run the same command — it overwrites the file.
 
 ---
 
@@ -75,51 +111,68 @@ Reference the rule in Cursor's settings or prepend it to a prompt manually.
 Windsurf reads `.windsurf/rules/*.md` or a root `.windsurfrules` file.
 
 ```bash
+# Per-rule file (recommended — easier to update individually)
 mkdir -p .windsurf/rules
 cp ~/agent-skills/skills/grill-me/SKILL.md .windsurf/rules/grill-me.md
-```
 
-Or append to a single rules file:
-
-```bash
+# Or append to a single rules file
 cat ~/agent-skills/skills/grill-me/SKILL.md >> .windsurfrules
 ```
+
+To update a per-rule file: `cp` again — it overwrites.
 
 ---
 
 ### GitHub Copilot (custom instructions)
 
-Copilot reads `.github/copilot-instructions.md`. Paste the skill body there:
+Copilot reads `.github/copilot-instructions.md`. Skills are always active (no slash commands).
 
 ```bash
+# Append a skill
 cat ~/agent-skills/skills/grill-me/SKILL.md >> .github/copilot-instructions.md
 ```
 
-Note: Copilot does not support slash-command invocation — the instructions are always active.
+To update: open the file and replace the skill block manually, or manage each skill between marker comments:
+
+```bash
+# Use markers so you can replace cleanly
+echo "<!-- skill:grill-me -->" >> .github/copilot-instructions.md
+cat ~/agent-skills/skills/grill-me/SKILL.md >> .github/copilot-instructions.md
+echo "<!-- /skill:grill-me -->" >> .github/copilot-instructions.md
+```
 
 ---
 
 ### Aider
 
-Aider reads `CONVENTIONS.md` or any file passed via `--read`. Add a skill as a read-only context file:
+Aider accepts extra context files via `--read` or `.aider.conf.yml`.
 
 ```bash
-# Add to a session
-aider --read ~/agent-skills/skills/code-review-enhanced/SKILL.md
+# Single session
+aider --read ~/agent-skills/skills/grill-me/SKILL.md
 
-# Or add to aider config permanently
-echo "read: ~/agent-skills/skills/code-review-enhanced/SKILL.md" >> .aider.conf.yml
+# Permanent (added to every session in this project)
+echo "read: ~/agent-skills/skills/grill-me/SKILL.md" >> .aider.conf.yml
 ```
+
+To update: `git pull` in `~/agent-skills` — Aider reads the file fresh each session, so updates are automatic if you use the path directly.
 
 ---
 
 ### Cline / RooCode
 
-These read `.clinerules` or `.roo/rules/*.md`. Copy the skill body:
+These read `.clinerules` or `.roo/rules/*.md`.
 
 ```bash
+# Per-rule file (recommended)
+mkdir -p .roo/rules
+cp ~/agent-skills/skills/grill-me/SKILL.md .roo/rules/grill-me.md
+
+# Or append to .clinerules
 cat ~/agent-skills/skills/grill-me/SKILL.md >> .clinerules
 ```
+
+To update a per-rule file: `cp` again.
 
 ---
 
