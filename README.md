@@ -186,18 +186,16 @@ To update a per-rule file: `cp` again.
 ## Contributing a skill
 
 1. Clone this repo
-2. Install [Lefthook](https://github.com/evilmartians/lefthook) and activate the hooks:
-   ```bash
-   # macOS
-   brew install lefthook
-   # or: npm i -g @evilmartians/lefthook
+2. Open a Claude Code session in the repo root — `scripts/bootstrap.sh` runs automatically and installs [Lefthook](https://github.com/evilmartians/lefthook) + activates the pre-push hook
+3. Run `/add-skill` — it scaffolds the file structure and checks for quality
+4. Push — Lefthook runs `scripts/verify-project.sh` automatically before every push and blocks if issues are found
+5. Submit a PR
 
-   lefthook install
-   ```
-3. Open a Claude Code session in the repo root
-4. Run `/add-skill` — it scaffolds the file structure and checks for quality
-5. Push — Lefthook runs `scripts/verify-project.sh` automatically before every push and blocks if issues are found
-6. Submit a PR
+If you're not using Claude Code, run setup manually:
+
+```bash
+bash scripts/bootstrap.sh
+```
 
 > **Skip the hook once (not recommended):** `git push --no-verify`
 

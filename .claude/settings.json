@@ -9,7 +9,21 @@
       "Bash(find . -name*)",
       "Bash(grep -rn*)",
       "Bash(ls*)",
-      "Bash(cat*)"
+      "Bash(cat*)",
+      "Bash(bash scripts/bootstrap.sh*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/bootstrap.sh"
+          }
+        ]
+      }
     ]
   }
 }

@@ -59,12 +59,23 @@ Skills in this repo must be:
 - `SKILL.md`: under 500 lines
 - `references/*.md`: no hard limit, but prefer focused docs
 
+## Setup
+
+When you open this repo in Claude Code, `scripts/bootstrap.sh` runs automatically via a `SessionStart` hook. It installs Lefthook and activates the pre-push git hook that runs `scripts/verify-project.sh` before every push.
+
+To run setup manually:
+
+```bash
+bash scripts/bootstrap.sh
+```
+
 ## Development workflow
 
 1. Run `/add-skill` to scaffold a new skill
 2. Run `/verify-project` before committing to check for secrets/PII/org terms
 3. Run `/grill-me` to stress-test a skill design before writing it
 4. Run `/skill-creator-compact` to refine or iterate on an existing skill
+5. Push — the pre-push hook runs `scripts/verify-project.sh` automatically and blocks if issues are found
 
 ## Stack
 
