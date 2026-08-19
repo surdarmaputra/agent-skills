@@ -10,6 +10,7 @@ A library of reusable agent skills — structured instruction sets that extend L
 | [`grill-me`](skills/grill-me/) | Relentless one-question-at-a-time interrogation of a plan or design before building |
 | [`prd-to-rfc`](skills/prd-to-rfc/) | Turn a Product Requirements Doc into a structured RFC |
 | [`skill-creator-compact`](skills/skill-creator-compact/) | Create, iterate, and quality-check skills with terse workflow + compress/simulate steps |
+| [`conventional-commit`](skills/conventional-commit/) | Format commits as conventional commits and keep PR title + description in sync after every push |
 
 ---
 
