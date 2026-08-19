@@ -15,16 +15,16 @@ A library of reusable agent skills — structured instruction sets that extend L
 
 ## Quickstart: Install skills
 
-### 1. Clone the repo
+No need to clone the repo. The installer fetches only what you need directly from GitHub.
 
 ```bash
-git clone https://github.com/surdarmaputra/agent-skills.git ~/agent-skills
+AGENT_SKILLS="bash <(curl -fsSL https://raw.githubusercontent.com/surdarmaputra/agent-skills/main/scripts/install-remote.sh)"
 ```
 
-### 2. List available skills
+### 1. List available skills
 
 ```bash
-bash ~/agent-skills/scripts/install.sh --list
+bash <(curl -fsSL https://raw.githubusercontent.com/surdarmaputra/agent-skills/main/scripts/install-remote.sh) --list
 ```
 
 ```
@@ -35,26 +35,26 @@ Available skills:
   skill-creator-compact          Create and iterate on skills with terse workflow
 ```
 
-### 3. Install the skills you want
+### 2. Install the skills you want
 
 **Global** — available in all your projects:
 
 ```bash
 # One skill
-bash ~/agent-skills/scripts/install.sh grill-me
+bash <(curl -fsSL https://raw.githubusercontent.com/surdarmaputra/agent-skills/main/scripts/install-remote.sh) grill-me
 
 # Multiple skills
-bash ~/agent-skills/scripts/install.sh grill-me code-review-enhanced
+bash <(curl -fsSL https://raw.githubusercontent.com/surdarmaputra/agent-skills/main/scripts/install-remote.sh) grill-me code-review-enhanced
 
 # Everything
-bash ~/agent-skills/scripts/install.sh --all
+bash <(curl -fsSL https://raw.githubusercontent.com/surdarmaputra/agent-skills/main/scripts/install-remote.sh) --all
 ```
 
 **Project-local** — only available in the current project:
 
 ```bash
 cd your-project
-bash ~/agent-skills/scripts/install.sh --project grill-me
+bash <(curl -fsSL https://raw.githubusercontent.com/surdarmaputra/agent-skills/main/scripts/install-remote.sh) --project grill-me
 ```
 
 Then invoke with a slash command in Claude Code:
@@ -64,23 +64,17 @@ Then invoke with a slash command in Claude Code:
 /code-review-enhanced
 ```
 
-### 4. Update installed skills
+### 3. Update installed skills
 
-Pull the latest from this repo, then re-run the same install command — it overwrites in place.
+Re-run the same install command — it overwrites in place. Or use `--update` to refresh everything already installed:
 
 ```bash
-# Pull updates
-cd ~/agent-skills && git pull
-
-# Update all skills you already have installed (global)
-bash ~/agent-skills/scripts/install.sh --update
+# Update all globally installed skills
+bash <(curl -fsSL https://raw.githubusercontent.com/surdarmaputra/agent-skills/main/scripts/install-remote.sh) --update
 
 # Update all skills in a project
 cd your-project
-bash ~/agent-skills/scripts/install.sh --project --update
-
-# Or update specific skills
-bash ~/agent-skills/scripts/install.sh grill-me code-review-enhanced
+bash <(curl -fsSL https://raw.githubusercontent.com/surdarmaputra/agent-skills/main/scripts/install-remote.sh) --project --update
 ```
 
 `--update` only touches skills already present in the destination — it won't add new ones.
@@ -89,7 +83,20 @@ bash ~/agent-skills/scripts/install.sh grill-me code-review-enhanced
 
 ## Install for other coding agents
 
-First clone the repo as above, then follow the agent-specific steps.
+Run the installer with `--all` first to get a local copy of the skill files, then follow the agent-specific steps below.
+
+```bash
+# Download all skills to a temp location
+bash <(curl -fsSL https://raw.githubusercontent.com/surdarmaputra/agent-skills/main/scripts/install-remote.sh) --all
+```
+
+The skills land in `~/.claude/skills/`. Use those files for the steps below, replacing `~/agent-skills/skills/` with `~/.claude/skills/`.
+
+Alternatively, clone the repo if you prefer a persistent local copy:
+
+```bash
+git clone https://github.com/surdarmaputra/agent-skills.git ~/agent-skills
+```
 
 ### Cursor
 
