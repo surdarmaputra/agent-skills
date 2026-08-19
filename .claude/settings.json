@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git fetch*)",
+      "Bash(git branch*)",
+      "Bash(find . -name*)",
+      "Bash(grep -rn*)",
+      "Bash(ls*)",
+      "Bash(cat*)",
+      "Bash(bash scripts/bootstrap.sh*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/bootstrap.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
