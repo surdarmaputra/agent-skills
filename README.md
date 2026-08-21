@@ -205,6 +205,8 @@ bash scripts/bootstrap.sh
 - **Generic** — works for any user, any codebase, any org
 - **No secrets or PII** — keys, tokens, emails, phone numbers
 - **No org-specific content** — no internal URLs, product names, team names
+- **Placeholders in templates** — templates a skill ships are copied verbatim into whatever the
+  skill generates, so use `<your-org>` rather than a real name
 - **Self-contained** — references live in `references/`, not external URLs (unless stable public docs)
 - **Under 500 lines**
 
