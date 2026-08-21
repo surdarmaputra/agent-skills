@@ -71,16 +71,29 @@ list_remote_skills() {
 install_skill() {
   local name="$1"
   local dest="$2"
+  local confirm="${3:-false}"   # true = prompt before replacing
   local src="$WORK/repo/skills/$name"
+  local target="$dest/$name"
 
   if [[ ! -d "$src" ]] || [[ ! -f "$src/SKILL.md" ]]; then
     err "$name — not found in library"
     return 1
   fi
 
+  if [[ -d "$target" ]] && [[ "$confirm" == true ]]; then
+    printf "  %b→%b  %s already installed. Replace? [y/N] " "$YELLOW" "$RESET" "$name"
+    if [[ "$YES" == true ]]; then
+      echo "y (--yes)"
+    else
+      read -r reply
+      [[ "$reply" =~ ^[Yy]$ ]] || { info "$name — skipped"; return 0; }
+    fi
+  fi
+
   mkdir -p "$dest"
-  cp -r "$src" "$dest/"
-  ok "$name → $dest/$name"
+  rm -rf "$target"
+  cp -r "$src" "$target"
+  ok "$name → $target"
 }
 
 # ── Parse args ────────────────────────────────────────────────────────────────
@@ -99,11 +112,13 @@ usage() {
   echo "  --all        Install every skill in the library"
   echo "  --update     Re-install skills already present in the target directory"
   echo "  --list       Print available skill names and exit"
+  echo "  --yes, -y    Skip confirmation prompts (non-interactive / scripting)"
   echo ""
 }
 
 PROJECT=false
 MODE="named"
+YES=false
 SKILLS=()
 
 if [[ $# -eq 0 ]]; then
@@ -117,6 +132,7 @@ while [[ $# -gt 0 ]]; do
     --all)      MODE="all"; shift ;;
     --update)   MODE="update"; shift ;;
     --list)     MODE="list"; shift ;;
+    --yes|-y)   YES=true; shift ;;
     --help|-h)  usage; exit 0 ;;
     -*)         err "Unknown flag: $1"; usage; exit 1 ;;
     *)          SKILLS+=("$1"); shift ;;
@@ -149,7 +165,7 @@ case "$MODE" in
     fetch_paths "skills"
     for dir in "$WORK/repo/skills"/*/; do
       name="$(basename "$dir")"
-      [[ -f "$dir/SKILL.md" ]] && install_skill "$name" "$DEST"
+      [[ -f "$dir/SKILL.md" ]] && install_skill "$name" "$DEST" false
     done
     ;;
 
@@ -178,7 +194,7 @@ case "$MODE" in
     updated=0
     for name in "${INSTALLED[@]}"; do
       if [[ -d "$WORK/repo/skills/$name" ]]; then
-        install_skill "$name" "$DEST"
+        install_skill "$name" "$DEST" false
         updated=$((updated + 1))
       else
         info "$name — not in library, skipped"
@@ -202,7 +218,7 @@ case "$MODE" in
     done
     fetch_paths "${sparse_paths[@]}"
     for name in "${SKILLS[@]}"; do
-      install_skill "$name" "$DEST"
+      install_skill "$name" "$DEST" true
     done
     ;;
 
