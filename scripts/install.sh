@@ -41,6 +41,7 @@ usage() {
   echo "  --all        Install every skill in the library"
   echo "  --update     Re-install skills already present in the target directory"
   echo "  --list       Print available skill names and exit"
+  echo "  --yes, -y    Skip confirmation prompts (non-interactive / scripting)"
   echo ""
 }
 
@@ -61,22 +62,36 @@ list_available() {
 install_skill() {
   local name="$1"
   local dest="$2"
+  local confirm="${3:-false}"   # true = prompt before replacing
   local src="$SKILLS_SRC/$name"
+  local target="$dest/$name"
 
   if [[ ! -d "$src" ]]; then
     err "$name — not found in skills/"
     return 1
   fi
 
+  if [[ -d "$target" ]] && [[ "$confirm" == true ]]; then
+    printf "  %b→%b  %s already installed. Replace? [y/N] " "$YELLOW" "$RESET" "$name"
+    if [[ "$YES" == true ]]; then
+      echo "y (--yes)"
+    else
+      read -r reply
+      [[ "$reply" =~ ^[Yy]$ ]] || { info "$name — skipped"; return 0; }
+    fi
+  fi
+
   mkdir -p "$dest"
-  cp -r "$src" "$dest/"
-  ok "$name → $dest/$name"
+  rm -rf "$target"
+  cp -r "$src" "$target"
+  ok "$name → $target"
 }
 
 # ── Parse args ───────────────────────────────────────────────────────────────
 
 PROJECT=false
 MODE="named"   # named | all | update | list
+YES=false
 SKILLS=()
 
 if [[ $# -eq 0 ]]; then
@@ -90,6 +105,7 @@ while [[ $# -gt 0 ]]; do
     --all)      MODE="all"; shift ;;
     --update)   MODE="update"; shift ;;
     --list)     MODE="list"; shift ;;
+    --yes|-y)   YES=true; shift ;;
     --help|-h)  usage; exit 0 ;;
     -*)         err "Unknown flag: $1"; usage; exit 1 ;;
     *)          SKILLS+=("$1"); shift ;;
@@ -120,7 +136,7 @@ case "$MODE" in
     echo -e "${BOLD}Installing all skills → $DEST_LABEL${RESET}"
     for dir in "$SKILLS_SRC"/*/; do
       name="$(basename "$dir")"
-      [[ -f "$dir/SKILL.md" ]] && install_skill "$name" "$DEST"
+      [[ -f "$dir/SKILL.md" ]] && install_skill "$name" "$DEST" false
     done
     ;;
 
@@ -135,7 +151,7 @@ case "$MODE" in
     for dir in "$DEST"/*/; do
       name="$(basename "$dir")"
       if [[ -d "$SKILLS_SRC/$name" ]]; then
-        install_skill "$name" "$DEST"
+        install_skill "$name" "$DEST" false
         updated=$((updated + 1))
       else
         info "$name — not in library, skipped"
@@ -153,7 +169,7 @@ case "$MODE" in
     echo ""
     echo -e "${BOLD}Installing skills → $DEST_LABEL${RESET}"
     for name in "${SKILLS[@]}"; do
-      install_skill "$name" "$DEST"
+      install_skill "$name" "$DEST" true
     done
     ;;
 

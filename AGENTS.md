@@ -53,6 +53,10 @@ Skills in this repo must be:
 - **Reusable** — anyone in any codebase should be able to use them
 - **Clean** — no secrets, PII, or sensitive data
 - **Self-contained** — external references go in `references/`, not inline
+- **Placeholders in templates** — a skill that ships a document template must use
+  `<your-org>`, `<team>`, or an empty cell where a real name would go. Whatever the template
+  contains gets copied verbatim into every document generated from it, and `verify-project`
+  cannot detect a team or product name it has never seen.
 
 ### File size
 
@@ -87,5 +91,6 @@ Before merging any skill:
 - [ ] Frontmatter valid: `name` + `description` present, description single-line
 - [ ] `## Comm style` block present
 - [ ] No org-specific content (run `/verify-project`)
+- [ ] Any shipped template uses placeholders, not real org/team/product names
 - [ ] Description triggers reliably without requiring exact phrasing
 - [ ] Under 500 lines
