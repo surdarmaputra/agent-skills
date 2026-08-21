@@ -131,6 +131,14 @@ scan "Internal URL" \
   "https?://[a-zA-Z0-9.\-]*(internal|corp|intra|\.local|jira\.|confluence\.|slack\.com/archives/|notion\.so/|linear\.app/|shortcut\.com/)" \
   --ignore-case
 
+# A tenant subdomain on a multi-tenant SaaS host names a specific company even
+# though the host itself is public — e.g. acme.sg.larksuite.com, acme.atlassian.net.
+# The pattern above cannot catch these: the hostnames look entirely legitimate.
+# Bare domains and <your-org> placeholders are intentionally not matched.
+scan "SaaS tenant subdomain" \
+  "https?://[a-z0-9][a-z0-9-]*(\.[a-z]{2,3})?\.(larksuite\.com|feishu\.cn|atlassian\.net|slack\.com|notion\.site|sharepoint\.com|zendesk\.com|okta\.com|monday\.com)" \
+  --ignore-case
+
 ORG_HITS=$(grep -rn "${SCAN_OPTS[@]}" -iE \
   "(our\s+(team|company|org|organization|sprint|jira|board)|#[a-z]+-[a-z]+-[a-z]+\s+channel)" \
   "$ROOT" 2>/dev/null \
