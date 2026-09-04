@@ -181,42 +181,9 @@ Engineering best practices split by consequence, not by category:
 - Behavior-affecting (swallowed error, missing error boundary, race, unhandled rejection, lost await, silent catch) → **LOGIC**
 - Cosmetic / maintainability (dead code, DRY, comment noise) → **NITPICK**
 
-**Reference-guide lookup.** Before finalizing a HARNESS/FE/LOGIC finding, if the file's language/framework or the issue's topic has a dedicated guide, check it for the specific pattern/anti-pattern name and cite it as evidence or phrasing — do not invent a check that isn't in these guides' spirit, and do not adopt their severity labels.
+**Reference-guide lookup.** Before finalizing a HARNESS/FE/LOGIC finding, if the file's language/framework or the issue's topic has a dedicated `code-review-skill` guide, open it, check for the specific pattern/anti-pattern name, and cite it as evidence or phrasing — do not invent a check outside these guides' spirit, and do not adopt their severity labels.
 
-| Trigger | Guide |
-|---|---|
-| `.tsx`/`.jsx`, hooks, RSC | `code-review-skill/reference/react.md` |
-| `.vue` | `code-review-skill/reference/vue.md` |
-| Angular (`.ts` + decorators, signals) | `code-review-skill/reference/angular.md` |
-| Svelte / SvelteKit | `code-review-skill/reference/svelte.md` |
-| `.rs` | `code-review-skill/reference/rust.md` |
-| Plain TS (non-FE-specific) | `code-review-skill/reference/typescript.md` |
-| `.java` (17/21) | `code-review-skill/reference/java.md` |
-| `.java` (8 / javax.*) | `code-review-skill/reference/java8.md` |
-| `.php` | `code-review-skill/reference/php.md` |
-| `.rb` / Rails | `code-review-skill/reference/ruby.md` |
-| `.py` (general) | `code-review-skill/reference/python.md` |
-| Django/DRF | `code-review-skill/reference/django.md` |
-| FastAPI | `code-review-skill/reference/fastapi.md` |
-| `.go` | `code-review-skill/reference/go.md` |
-| `.cs` / .NET | `code-review-skill/reference/csharp.md` |
-| `.kt` / Android | `code-review-skill/reference/kotlin.md` |
-| `.swift` | `code-review-skill/reference/swift.md` |
-| NestJS | `code-review-skill/reference/nestjs.md` |
-| `.c` | `code-review-skill/reference/c.md` |
-| `.cpp`/`.hpp` | `code-review-skill/reference/cpp.md` |
-| `.zig` | `code-review-skill/reference/zig.md` |
-| `.css`/`.less`/`.scss` | `code-review-skill/reference/css-less-sass.md` |
-| Qt/QML | `code-review-skill/reference/qt.md` |
-| Cross-cutting: architecture-scale change | `code-review-skill/reference/architecture-review-guide.md` |
-| Cross-cutting: perf-sensitive path | `code-review-skill/reference/performance-review-guide.md` |
-| Cross-cutting: auth/input/user-data handling | `code-review-skill/reference/security-review-guide.md`, `reference/cross-cutting/sql-injection-prevention.md`, `reference/cross-cutting/xss-prevention.md` |
-| Cross-cutting: any language, generic anti-patterns | `code-review-skill/reference/code-quality-universal.md`, `reference/common-bugs-checklist.md` |
-| Cross-cutting: loops over DB/API calls | `code-review-skill/reference/cross-cutting/n-plus-one-queries.md` |
-| Cross-cutting: try/catch, error propagation | `code-review-skill/reference/cross-cutting/error-handling-principles.md` |
-| Cross-cutting: async/goroutine/actor code | `code-review-skill/reference/cross-cutting/async-concurrency-patterns.md` |
-
-Full paths resolve under `~/.claude/skills/`. Only open a guide when a finding is already suspected — do not read all of them speculatively.
+The full trigger → guide table (all languages, frameworks, and cross-cutting topics) is in **`references/language-guides.md`**. Open it only when a finding is already suspected — never read the guides speculatively. A guide entry matching a finding is not itself evidence; the Phase 4 evidence bar still applies.
 
 ### Phase 3b: LOGIC check — blast radius trace
 
@@ -345,155 +312,28 @@ Within a file, order: `CRITICAL` → `LOGIC` → `HARNESS` → `FE` → `NITPICK
 
 When in doubt, over-space rather than under-space: two adjacent lines with no blank line between them will render as one run-on sentence in GitLab.
 
-**Preamble.** When any `[QUESTION]` is emitted, define it once before the findings block, or the label reads as a weak finding. Blank line after it before the first file header:
-```
-`[QUESTION]` = product-judgment doubt only you can resolve, not a defect. Listed last in each file. Not counted in the totals or the score.
+**Finding forms.** Short form (one line: `<i>.<j>) L<line> [<LABEL>] <issue> → <fix>`), expanded form (≤4 bullets, ≤10 lines, ≤1 `Ref:`), and the `[QUESTION]` expanded structure — full templates, the `[QUESTION]` preamble text, and a complete worked example with GitLab blank lines shown verbatim are in **`references/output-format.md`**. Read it before emitting the first output.
 
-```
-
-**Short form (default)** — one line each, but insert a **blank line between consecutive short-form findings** in the same file (see GitLab paste formatting above) — without it they render as one merged sentence:
-```
-<i>.<j>) L<line> [<LABEL>] <issue> → <fix>
-
-<i>.<j+1>) L<line> [<LABEL>] <issue> → <fix>
-```
-
-**Expanded form** — when the explanation does not fit one line. Hard caps: **≤4 bullets, ≤10 lines total before/after, ≤1 reference.** Blank line after the headline and blank line before `Ref:` are mandatory, not optional whitespace:
-```
-<i>.<j>) L<line> [<LABEL>] <one-line headline>
-
-  - <point>
-  - <point>
-
-  ```ts
-  // Before
-  ...
-  // After
-  ...
-  ```
-
-  Ref: <path:line | doc URL | code-review-skill guide path>
-```
-
-`[NITPICK]` is always one line. Never expanded.
-
-**`[QUESTION]` may use expanded form** — the opposite of NITPICK. A one-line question is usually too vague to answer. Structure, in order:
-1. What the code now does / what changed
-2. Why it is ambiguous — the competing readings
-3. The concrete options
-4. Why it is a question and not a finding
-5. Cross-link to a related finding if the answer changes that finding's severity
-
-Same caps as any expanded finding: ≤4 bullets, ≤1 reference.
-
-Soft cap 5 questions per review.
-
-Example (blank lines shown exactly as they must appear when pasted into GitLab):
-```
-1) src/features/financing/hooks/use-application.ts
-
-  1.1) L34-38 [CRITICAL][LOGIC] Guard flipped: cancelled applications now editable
-
-    - Was `status === 'active'`, now `status !== 'draft'` → 'cancelled' passes
-    - `submit-button.tsx:22` renders enabled off this hook → user can submit a cancelled application
-    - Parallel guard at `application-list.tsx:88` still uses `=== 'active'` → inconsistent
-
-    ```ts
-    // After
-    if (status !== 'active') return { editable: false };
-    ```
-
-    Ref: src/features/financing/utils/status.ts:14
-
-  1.2) L56  [HARNESS] Missing dep in useEffect → stale `applicationId` closure
-
-    Ref: code-review-skill/reference/react.md#hooks
-
-  1.3) L12  [HARNESS] `any` on payload → `payload: ApplicationResponse`
-
-  1.4) L7   [NITPICK] Arrow fn export → `export default function useApplication()`
-
-  1.5) L44  [QUESTION] Draft applications now skip the fee recalculation — intended?
-
-    - The guard changed from `status === 'active'` to `status !== 'cancelled'`, so 'draft' now enters the branch that skips `recalculateFee()`
-    - Two readings: drafts genuinely have no fee yet (skipping is correct), or the fee should be recalculated on every edit and 'draft' was included by accident
-    - Options: keep as is, or narrow the guard back to an explicit allowlist of statuses
-    - Asked rather than flagged because both readings are internally consistent — only product knows which fee model applies to drafts
-```
+- `[NITPICK]` is always one line, never expanded.
+- `[QUESTION]` may use expanded form — a one-line question is usually too vague. Soft cap 5 per review.
 
 ### Phase 8: (removed — questions are `[QUESTION]` findings, emitted inline per file in Phase 7)
 
 ### Phase 9: Summary
 
-Blank line before this line, separating it from the last file's findings:
+Blank line before it, separating it from the last file's findings:
 ```
 CRITICAL N · LOGIC N · HARNESS N · FE N · NITPICK N — <N> files
 ```
-
-`[QUESTION]` is excluded from that line. If any were emitted, add a second line, on its own line with a blank line before it:
-```
-
-QUESTION N — <N> files
-```
-
-Zero findings → `Clean. No findings.` (still emit the QUESTION line if questions exist, blank-line separated as above).
+`[QUESTION]` is excluded — if any were emitted, add `QUESTION N — <N> files` on its own line, blank line before it. Zero findings → `Clean. No findings.` (still emit the QUESTION line if questions exist).
 
 ### Phase 10: Scoring
 
-Score after the summary, always — even on `Clean. No findings.` (all dimensions default 10, final 10.0, EXCELLENT).
+Score after the summary, **always** — even on `Clean. No findings.` (all dimensions 10, final 10.0, EXCELLENT).
 
-**Five dimensions, each 0–10, start at 10 and deduct per finding:**
+Five dimensions (Code quality, Maintainability, Best practices, Harness compliance, Security compliance), each starts at 10 and deducts per finding it is fed by; final score = mean, one decimal. Classification: `0.0–4.9` BAD · `5.0–7.9` GOOD · `8.0–10.0` EXCELLENT.
 
-| Dimension | Fed by |
-|---|---|
-| Code quality | LOGIC, NITPICK |
-| Maintainability | NITPICK, HARNESS (naming/simplicity/structure rules) |
-| Best practices | FE, HARNESS (pattern/convention rules) |
-| Harness compliance | HARNESS only |
-| Security compliance | any finding whose evidence cites `security-review-guide`, `sql-injection-prevention`, `xss-prevention`, or is otherwise auth/input/user-data related — default 10 untouched if none |
-
-A finding can feed more than one dimension (e.g. a HARNESS naming violation dents both Maintainability and Harness compliance). A dimension fed by zero findings stays at 10.
-
-**Per-finding deduction, applied once per fed dimension:**
-
-| Finding | Deduction |
-|---|---|
-| `[CRITICAL][*]` | −3 |
-| `[LOGIC]` (non-critical) | −1.5 |
-| `[HARNESS]` (non-critical) | −1 |
-| `[FE]` (non-critical) | −1 |
-| `[NITPICK]` | −0.5 |
-| `[QUESTION]` | 0 — never deducts from any dimension |
-
-Floor each dimension at 0. Final score = mean of the 5 dimensions, one decimal place.
-
-**Classification:**
-
-| Range | Label |
-|---|---|
-| 0.0 – 4.9 | BAD |
-| 5.0 – 7.9 | GOOD |
-| 8.0 – 10.0 | EXCELLENT |
-
-**Output block**, always last. Blank line before `Scoring` (separating it from the summary block above), and a blank line between every dimension line — each `Label: value` line is a standalone colon-led paragraph, per the GitLab paste formatting rule in Phase 7:
-```
-
-Scoring
-
-  Code quality:        <n>/10
-
-  Maintainability:      <n>/10
-
-  Best practices:       <n>/10
-
-  Harness compliance:   <n>/10
-
-  Security compliance:  <n>/10
-
-  Final: <n>/10 — <BAD|GOOD|EXCELLENT>
-```
-
-If a brief closing remark follows (e.g. a one-sentence fix direction), separate it from the Scoring block with a blank line. If that remark itself opens with a label (`Fix direction: ...`), the label and its sentence form their own standalone paragraph — never appended directly after the Scoring block on the same line or the line right after it with no blank line.
+The dimension→finding feed map, per-finding deduction values, and the exact `Scoring` output block (blank line between every colon-led line, per Phase 7) are in **`references/output-format.md`** — same file as the finding templates, so one read covers Phases 7, 9, and 10.
 
 ### Phase 11: Publish (optional) — mandatory prompt, optional action
 
