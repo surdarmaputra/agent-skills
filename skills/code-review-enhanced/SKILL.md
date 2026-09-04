@@ -1,6 +1,6 @@
 ---
 name: code-review-enhanced
-description: "Review diffs combining code-review-principal's evidence-led workflow (blast-radius trace, line verification, concise per-file output) with code-review-skill's language-specific and cross-cutting reference guides (React/Vue/Angular/Rust/Go/Python/security/perf/architecture/...). Findings typed HARNESS/FE/LOGIC/NITPICK/QUESTION, CRITICAL only when a concrete failure is nameable. Plain-English output for non-native readers. Accepts a GitLab MR link as input — resolves it to a branch, syncs it, and pulls MR discussion for context. Use whenever code, diffs, plans, branches, or MR links need review — even if user doesn't say 'skill'."
+description: "Review diffs combining code-review-principal's evidence-led workflow (blast-radius trace, line verification, concise per-file output) with code-review-skill's language-specific and cross-cutting reference guides (React/Vue/Angular/Rust/Go/Python/security/perf/architecture/...). Findings typed HARNESS/FE/LOGIC/NITPICK/QUESTION, CRITICAL only when a concrete failure is nameable. Plain-English output for non-native readers. Accepts a GitLab MR link as input — resolves it to a branch, syncs it, and pulls MR discussion for context. Also challenges risky deprecations/removals (safe? necessary? widely used?) and flags terminology mismatches between names and implementation. Use whenever code, diffs, plans, branches, or MR links need review — even if user doesn't say 'skill'."
 metadata:
   type: code-review
   author: principal-frontend-architect
@@ -13,6 +13,7 @@ metadata:
 - **Process, evidence bar, labels, output** → code-review-principal. Do not deviate.
 - **Depth on a specific language/framework/security/perf/architecture question** → pull from code-review-skill's `reference/` guides (paths below), then fold the finding back into code-review-principal's label scheme. Never emit code-review-skill's own labels (🔴/🟡/🟢/`[blocking]`/`[nit]`/etc.) — those are a different skill's convention and are not used here.
 - **Phase 2c (flow brief + diagram)** is unique to code-review-enhanced — code-review-principal has no equivalent phase. It sits between code-review-principal's Phase 2b and Phase 3, described in full below.
+- **Phases 3c (deprecation/removal challenge) and 3d (terminology consistency)** are also code-review-enhanced-only — code-review-principal has neither. They run as focused traces inside Phase 3, alongside 3b.
 
 ## Comm style
 
@@ -43,7 +44,7 @@ Concision comes from cutting redundant clauses, not grammar words.
 1. Detect guidelines: `CLAUDE.md` → `AGENTS.md` → `docs/ARCHITECTURE.md` (repo root, then any subdirectory-scoped copy nearer each changed file). Read the **full file**, not a skim. Extract every enforceable rule into a numbered checklist (see Phase 3a) — a rule that isn't on the checklist will not get checked later. Missing entirely → use FE/eng baselines, say so in the output preamble.
 2. Input is a GitLab MR link → resolve it to a branch first (Phase 0) before anything else.
 3. Prompt user: current branch, target branch (guessed from origin/HEAD, or from the resolved MR if Phase 0 ran), confirm review
-4. On confirmation: sync the branch and pull MR discussion (Phase 1.5) → fetch diff → infer intent → **produce flow brief + diagram (2c, code-review-enhanced only)** → build harness checklist (3a) → assess (4 checks + reference-guide lookup) → trace blast radius → verify lines → output
+4. On confirmation: sync the branch and pull MR discussion (Phase 1.5) → fetch diff → infer intent → **produce flow brief + diagram (2c, code-review-enhanced only)** → build harness checklist (3a) → assess (4 checks + reference-guide lookup) → run focused traces (blast radius 3b, deprecation 3c, terminology 3d) → verify lines → output
 
 **Never prompt the user for MR description / ticket / context.** Intent is inferred (Phase 2b). MR discussion is pulled automatically (Phase 1.5), not asked for. Zero friction.
 
@@ -171,8 +172,10 @@ Run all 4 per file. Any check can produce any label.
 
 1. **HARNESS** — run the Phase 3a checklist against this file; every `violated` entry is a finding. Typical categories: layer violations, import direction, TS strict (`any`, `type` vs `interface`), testing trophy, naming (kebab-case, shadowing), simplicity (nesting, guard clauses, YAGNI), perf (lazy load, specific imports). The checklist is authoritative — do not additionally invent HARNESS findings that aren't traceable to a numbered rule.
 2. **FE** — React hooks (deps, stale closures), composition (prop drilling, memo abuse), CSS/Tailwind, a11y (ARIA, semantic)
-3. **LOGIC** — business logic impact + behavior-affecting engineering issues. See Phase 3b.
+3. **LOGIC** — business logic impact + behavior-affecting engineering issues. See Phase 3b (blast radius), 3c (deprecation/removal), 3d (terminology).
 4. **NITPICK** — dead code, DRY, comment noise, minor simplification, naming
+
+Phases 3b–3d are focused traces that feed these same labels — run them after the 4 checks, not instead of them.
 
 Engineering best practices split by consequence, not by category:
 - Behavior-affecting (swallowed error, missing error boundary, race, unhandled rejection, lost await, silent catch) → **LOGIC**
@@ -238,6 +241,36 @@ Wide blast radius — spot-checked 15 of <M> call sites for <symbol>. Recommend 
 ```
 
 **Invariant checks** (cheap, high value): for each changed guard/condition, ask — is there a matching guard elsewhere that is now inconsistent? e.g. status checked in 3 places, diff changes 1.
+
+### Phase 3c: Deprecation & removal check — code-review-enhanced only, always runs
+
+Trigger: the diff deletes or `@deprecated`-marks a **shared / exported** thing — fn, class, component, hook, exported const, API route, GraphQL/DB field, config key, feature flag, env var, event topic, i18n key, public type. Purely local symbols (never imported elsewhere) → skip.
+
+Per symbol:
+
+1. **Count users.** `grep -rn '<name>' <src>` across the repo + sibling packages. Note count and spread (one feature vs many, test-only vs production).
+2. **Cleanup complete?** Every in-repo caller updated in this same diff. A leftover reference → `[LOGIC]`, cite the `file:line` still calling it — that is a build / runtime break.
+3. **Safe?** Look for surface the diff can't see — other repos, persisted rows, bookmarked URLs, cached configs, external clients. Hard removal + external surface + no deprecation window → `[QUESTION]`: "`X` removed outright; N in-repo callers plus likely external users — deprecate-then-remove instead?"
+4. **Necessary?** Removal not required by the MR's stated intent, deleting widely-used code, with no named replacement → `[QUESTION]`. If a lower-risk path exists, name it: keep a thin re-export / alias, `@deprecated` tag + follow-up ticket, or phase it out behind a flag.
+
+Skip clean removals of dead, single-caller, internal code — no finding. Raise something only when it is shared surface **and** (leftover callers OR no migration path OR churn with no stated reason). Caps as Phase 3b — 10 symbols, 15 call sites; exceeded → one line, recommend full grep before merge.
+
+### Phase 3d: Terminology consistency check — code-review-enhanced only, always runs
+
+Trigger: a hunk adds or edits a **named multi-value construct** — a boolean/enum condition, a union or enum type, an object/map used as a lookup, a `switch`, a group of related identifiers (file names, keys, route segments, analytics event names), or a domain term that also appears in the guideline glossary.
+
+Three mismatches to check:
+
+1. **Name vs contents.** The identifier's scope must match what it actually covers. `isDriver || isMerchant` feeding something called `driverDeductionHistory` / `driver-deduction-history.ts` — the name says "driver" but merchants pass through it too. Flag a name narrower, broader, or a different domain than the values it holds.
+2. **Name vs implementation.** An enum member, flag, or key whose name asserts one behavior while the code does another — `ENABLE_CACHE` that also swaps the transport; `isReadOnly` that still allows one write path.
+3. **Vocabulary drift.** One concept under two names within the diff, or a name that contradicts the settled term in CLAUDE.md / AGENTS.md / surrounding code (diff says `merchant`, the rest of the module says `seller`).
+
+Label:
+- Cosmetic, no wrong behavior reachable → `[NITPICK]`, one line, suggested rename.
+- A later reader would plausibly trust the misleading name and act on it (filters `driver-*`, silently drops merchant rows) → `[LOGIC]`, cite the consumer line that would break.
+- Unclear whether the name or the implementation is the mistake → `[QUESTION]`, both readings laid out.
+
+Real conflicts only — this is not a licence for a personal-preference naming pass (see Persona notes).
 
 ### Phase 4: Confidence & evidence bar
 
@@ -507,6 +540,9 @@ Nothing verifiable → **omit the reference.** A missing ref beats a dead one.
 - Diff has no diagrammable flow (config/dependency/pure data-layer change) → Phase 2c still emits numbered points, states `Flow diagram: not applicable` instead of forcing one
 - MR bundles more than 6 distinct flows (Phase 2c) → diagram the first 6 in one `rect`-segmented diagram, numbered-points-only for the rest, state the overflow count
 - Phase 2c can't verify a step's new/existing status against the base SHA → leave that step uncolored, never guess
+- Removed symbol is local/private and its one caller is updated in the same diff (Phase 3c) → no finding, cleaned up silently
+- Deprecation ships with its migration path in the same MR (Phase 3c) → note it in the flow brief, don't raise a QUESTION
+- Naming mismatch with no reachable wrong behavior (Phase 3d) → one-line NITPICK, never expanded, never a QUESTION
 - Publish-flow edge cases (unsupported provider, MR state, malformed pick/drop input, mid-flow race, duplicate posts, repeated failures) → all handled inline in `references/gitlab-publish.md`, not duplicated here
 
 ---
