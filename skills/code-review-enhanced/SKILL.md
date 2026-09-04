@@ -1,6 +1,6 @@
 ---
 name: code-review-enhanced
-description: "Review diffs combining code-review-principal's evidence-led workflow (blast-radius trace, line verification, concise per-file output) with code-review-skill's language-specific and cross-cutting reference guides (React/Vue/Angular/Rust/Go/Python/security/perf/architecture/...). Findings typed HARNESS/FE/LOGIC/NITPICK/QUESTION, CRITICAL only when a concrete failure is nameable. Plain-English output for non-native readers. Use whenever code, diffs, plans, or branches need review — even if user doesn't say 'skill'."
+description: "Review diffs combining code-review-principal's evidence-led workflow (blast-radius trace, line verification, concise per-file output) with code-review-skill's language-specific and cross-cutting reference guides (React/Vue/Angular/Rust/Go/Python/security/perf/architecture/...). Findings typed HARNESS/FE/LOGIC/NITPICK/QUESTION, CRITICAL only when a concrete failure is nameable. Plain-English output for non-native readers. Accepts a GitLab MR link as input — resolves it to a branch, syncs it, and pulls MR discussion for context. Use whenever code, diffs, plans, branches, or MR links need review — even if user doesn't say 'skill'."
 metadata:
   type: code-review
   author: principal-frontend-architect
@@ -12,6 +12,7 @@ metadata:
 
 - **Process, evidence bar, labels, output** → code-review-principal. Do not deviate.
 - **Depth on a specific language/framework/security/perf/architecture question** → pull from code-review-skill's `reference/` guides (paths below), then fold the finding back into code-review-principal's label scheme. Never emit code-review-skill's own labels (🔴/🟡/🟢/`[blocking]`/`[nit]`/etc.) — those are a different skill's convention and are not used here.
+- **Phase 2c (flow brief + diagram)** is unique to code-review-enhanced — code-review-principal has no equivalent phase. It sits between code-review-principal's Phase 2b and Phase 3, described in full below.
 
 ## Comm style
 
@@ -40,18 +41,33 @@ Concision comes from cutting redundant clauses, not grammar words.
 ## Boot sequence
 
 1. Detect guidelines: `CLAUDE.md` → `AGENTS.md` → `docs/ARCHITECTURE.md` (repo root, then any subdirectory-scoped copy nearer each changed file). Read the **full file**, not a skim. Extract every enforceable rule into a numbered checklist (see Phase 3a) — a rule that isn't on the checklist will not get checked later. Missing entirely → use FE/eng baselines, say so in the output preamble.
-2. Prompt user: current branch, target branch (guessed from origin/HEAD), confirm review
-3. Fetch diff → infer intent → build harness checklist (3a) → assess (4 checks + reference-guide lookup) → trace blast radius → verify lines → output
+2. Input is a GitLab MR link → resolve it to a branch first (Phase 0) before anything else.
+3. Prompt user: current branch, target branch (guessed from origin/HEAD, or from the resolved MR if Phase 0 ran), confirm review
+4. On confirmation: sync the branch and pull MR discussion (Phase 1.5) → fetch diff → infer intent → **produce flow brief + diagram (2c, code-review-enhanced only)** → build harness checklist (3a) → assess (4 checks + reference-guide lookup) → trace blast radius → verify lines → output
 
-**Never prompt for MR description / ticket / context.** Intent is inferred (Phase 2b). Zero friction.
+**Never prompt the user for MR description / ticket / context.** Intent is inferred (Phase 2b). MR discussion is pulled automatically (Phase 1.5), not asked for. Zero friction.
 
 ---
 
 ## Workflow
 
+### Phase 0: MR link input (optional)
+
+Only runs when the user's message contains a merge request URL (self-hosted GitLab pattern: `https://<host>/<namespace>/<project>/-/merge_requests/<iid>`). No link → skip straight to Phase 1.
+
+1. Parse `host`, `project path` (between host and `/-/merge_requests/`), and `iid` from the URL.
+2. Check MCP readiness: `mcp__gitlab__health_check` (fall back to `mcp__gitlab__whoami`).
+   - Fails / not authenticated → tell the user the GitLab MCP server is unreachable, so the link can't be resolved automatically. Ask them to `git checkout` the branch themselves and re-run, or fix the MCP connection. **Stop** — do not guess a branch name.
+   - OK → continue.
+3. `mcp__gitlab__get_merge_request` on that project/iid → get `source_branch`, `target_branch`, `iid`, `web_url`, `state`.
+4. Feed `source_branch` as the current branch and `target_branch` as the target into Phase 1 — the confirmation prompt still runs, unchanged, even though both values came from the MR instead of local git.
+5. Remember `iid` / `web_url` / project path for Phase 1.5 and Phase 11 — no need to re-derive them later.
+
+MR merged/closed → still resolvable (state is shown, not blocked) — reviewing a closed MR's final diff is a legitimate use case. Only Publish (Phase 11) cares about `state=opened`.
+
 ### Phase 1: Branch confirmation
 
-Detect current + default branch (via `git branch -a`, `git rev-parse --abbrev-ref origin/HEAD`).
+Detect current + default branch (via `git branch -a`, `git rev-parse --abbrev-ref origin/HEAD`), unless Phase 0 already supplied both.
 
 Prompt:
 ```
@@ -59,6 +75,17 @@ Current: <branch> | Target: <target> | Confirm? [y/n]
 ```
 
 User can override target. Default → origin/HEAD.
+
+### Phase 1.5: Branch sync + MR discussion — mandatory after confirmation
+
+Runs once, right after the user confirms in Phase 1, regardless of whether the branch came from an MR link (Phase 0) or was already checked out. Diff collection (Phase 2) must not start until this finishes.
+
+1. **Get on the right branch.** Currently on the confirmed branch → skip. Otherwise: `git fetch origin <branch>`, then check out — `git switch <branch>` if a local branch already exists, else `git switch -c <branch> origin/<branch>`.
+2. **Pull latest.** `git fetch origin <branch>` then `git pull --ff-only origin <branch>`. Non-fast-forward (local commits diverge from remote) → do not force anything — tell the user the branch has local commits not on origin, ask them to resolve it (rebase/reset) manually, then stop.
+3. **Resolve the MR**, if Phase 0 didn't already hand one over: same lookup as `references/gitlab-publish.md` Step 3 — `mcp__gitlab__list_merge_requests` scoped to the project, filtered by `source_branch` = the confirmed branch. Zero or ambiguous results here are non-fatal (unlike Publish) — just means no discussion to pull; continue to step 4 with nothing fetched.
+4. **Pull MR discussion.** MR resolved (from Phase 0 or step 3) → `mcp__gitlab__mr_discussions` (or `mcp__gitlab__get_merge_request_notes`) for that `iid`.
+   - MCP unreachable or the call errors → **do not break the review.** Print one line: `GitLab MCP unreachable — reviewing without MR discussion context.` and continue to Phase 2 with no discussion loaded.
+   - Succeeds → hold the discussion (author/reviewer comments, resolved/unresolved state) as extra context for Phase 2b (intent) and Phase 4.5-style awareness — a point already raised and resolved in discussion is a signal to not re-flag it, not a rule to cite in output.
 
 ### Phase 2: Diff collection
 
@@ -92,6 +119,40 @@ No user input. Derive intent from, in order:
 3. The diff itself — new fns, changed guards, new API calls
 
 Write intent to yourself in one line. Use it to prioritize, **not** to justify findings. A finding is never valid because "it doesn't match inferred intent" — inference is not evidence. See Phase 4 evidence bar.
+
+### Phase 2c: Flow brief + diagram — code-review-enhanced only, always runs
+
+Not part of code-review-principal. Purpose: give the reviewer a verified mental model of what the MR actually does, before any findings — orientation, not assessment. Stays separate from Phase 2b: 2b is your own private one-liner for prioritizing; this is a public, detailed, user-facing deliverable. Runs on every review, unconditionally — no opt-in needed.
+
+**Output has two parts, always in this order:**
+
+1. **Numbered points** — plain-English walk-through of what the MR does, in the order a user/request would actually hit it. Always produced, never skipped — even a pure-refactor or config-only MR gets a numbered summary of what changed and why.
+2. **One mermaid `sequenceDiagram`, `autonumber` always on** — attempted whenever the diff has any request/response, state-transition, or UI-flow shape to it. Genuinely diagram-less diffs (dependency bump, pure config, isolated data-layer change with no caller-visible flow) get one explicit line instead: `Flow diagram: not applicable — <one clause why>`. Never force a diagram onto a diff that has no flow, and never silently omit one that does.
+
+**Diagram convention — locked, do not deviate:**
+
+- **Participants are actors/components only** — `User`, `Home Page`, `Recommendation Detail Page`, `Backend Service`, `Liveness SDK`, etc. Never an endpoint path, a storage key, or a variable name as a participant.
+- **Endpoints, storage ops, and variables live in the message text or a `Note`**, not the participant list — e.g. `Detail->>Backend: POST /recommendation/confirm { orderId }`, `Note over Detail: writes orderId + bankInfo to localStorage`.
+- **Prune variables to the ones that matter** — only what actually drives a later branch or step (`orderId`, `rejectReason`, `faceMatchId`, `contractH5Path`-style values). Skip internal param shapes that don't affect control flow (`deviceInfo`, `bankInfo` internals) unless a branch depends on them.
+- **`autonumber` always on**, so a reviewer can cross-reference a diagram step against the numbered-points brief above it.
+
+**One diagram, always — even for multiple flows.** If the MR bundles more than one distinct flow (e.g. a card-tap flow, a confirm-branch flow, and a separate skip-resume handoff), segment them inside the *same* diagram using `rect` blocks with a `Note` naming each section — never split into multiple diagrams. Cap at **6 `rect` sections**. Beyond the cap, diagram the first 6 and fall back to numbered-points-only for the rest, with one line stating the overflow (same pattern as Phase 3b's blast-radius cap):
+```
+Flow diagram capped — showed 6 of <N> flows. Remaining flows described in numbered points only.
+```
+
+**Color coding — new vs existing, mandatory verification, no guessing:**
+
+- **Color by behavioral novelty, not by whether the diff literally touched the line.** A hunk that only renames, extracts, or reorders with no observable behavior change stays gray/existing, even though the diff shows it as changed. Only color green/new where a genuinely new capability, branch, or side effect was introduced. A naive "diff-touched = green" rule is explicitly wrong here — it paints mechanical refactors as new business logic and defeats the entire purpose of this phase.
+- **Granularity is line/hunk-level, never file-level.** A modified (not newly-added) file routinely mixes both — e.g. a pre-existing CTA button (existing) that a new handler wires up for the first time (new) in the same file. File-level "existed before → all gray" is provably wrong on exactly the files that matter most.
+- **Every color label must be verified against the base SHA before it ships** — same evidence bar as Phase 6's line verification for findings. Check with `git show <base_sha>:<path>` (does this file/behavior exist before the MR?) and `git diff <base_sha> <head_sha> -- <path>` (is this specific hunk new or a no-op refactor?). A claim that can't be verified this way does not get a color — render that step neutral/uncolored rather than guess.
+- Suggested rendering: `rect rgba(150,150,150,0.15)` + `Note` for existing sections, `rect rgba(80,180,120,0.15)` + `Note` for new sections. Consistent colors across the whole diagram.
+
+**Reuse across phases (informal, no formal handoff).** Whatever Phase 2c already verified about a file (new file vs. modified, which specific hunk is new behavior) is fair game to reuse in Phase 3 / Phase 3b instead of re-deriving from scratch — same norm as the Phase 3a checklist persisting as working notes through Phase 3. This is a convenience, not a required data contract — don't build tooling around it.
+
+**Scope boundaries:**
+- **Chat-only.** Never enters the Phase 11 publish flow. Phase 11 posts numbered findings to GitLab; the flow brief is orientation for the reviewer, not a defect to report, and mixing the two blurs "what changed" with "what's wrong." `references/gitlab-publish.md` has no picker entry for it and should not be given one.
+- **Not subject to Phase 7's GitLab-paste blank-line rules** — those exist to stop GitLab's markdown renderer from collapsing plain paragraph text, and don't apply here since the diagram lives inside a fenced ` ```mermaid ` block (fenced content renders verbatim regardless of surrounding blank lines) and the numbered points are chat-only prose, not a GitLab comment payload.
 
 ### Phase 3a: Harness checklist — mandatory before assessment
 
@@ -440,6 +501,12 @@ Nothing verifiable → **omit the reference.** A missing ref beats a dead one.
 - Unclear scope → default to FE/eng rules; unsure → NITPICK or drop
 - Doubt needs product knowledge, not more code reading → `[QUESTION]`, never a hedged LOGIC finding
 - No matching code-review-skill guide for the file's language → fall back to the 4 checks unaided, do not stall
+- MR link given but MCP unreachable (Phase 0) → tell user, stop; don't guess the branch
+- Branch resolved but MR discussion fetch fails (Phase 1.5) → warn inline, continue review without it — never blocks
+- Branch has local commits not on origin (Phase 1.5 pull) → tell user, stop; never force-push/reset over local work
+- Diff has no diagrammable flow (config/dependency/pure data-layer change) → Phase 2c still emits numbered points, states `Flow diagram: not applicable` instead of forcing one
+- MR bundles more than 6 distinct flows (Phase 2c) → diagram the first 6 in one `rect`-segmented diagram, numbered-points-only for the rest, state the overflow count
+- Phase 2c can't verify a step's new/existing status against the base SHA → leave that step uncolored, never guess
 - Publish-flow edge cases (unsupported provider, MR state, malformed pick/drop input, mid-flow race, duplicate posts, repeated failures) → all handled inline in `references/gitlab-publish.md`, not duplicated here
 
 ---
