@@ -1,6 +1,6 @@
 ---
 name: code-review-enhanced
-description: "Review diffs combining code-review-principal's evidence-led workflow (blast-radius trace, line verification, concise per-file output) with code-review-skill's language-specific and cross-cutting reference guides (React/Vue/Angular/Rust/Go/Python/security/perf/architecture/...). Findings typed HARNESS/FE/LOGIC/NITPICK/QUESTION, CRITICAL only when a concrete failure is nameable. Plain-English output for non-native readers. Use whenever code, diffs, plans, or branches need review — even if user doesn't say 'skill'."
+description: "Review diffs combining code-review-principal's evidence-led workflow (blast-radius trace, line verification, concise per-file output) with code-review-skill's language-specific and cross-cutting reference guides (React/Vue/Angular/Rust/Go/Python/security/perf/architecture/...). Findings typed HARNESS/FE/LOGIC/NITPICK/QUESTION, CRITICAL only when a concrete failure is nameable. Plain-English output for non-native readers. Accepts a GitLab MR link as input — resolves it to a branch, syncs it, and pulls MR discussion for context. Also challenges risky deprecations/removals (safe? necessary? widely used?) and flags terminology mismatches between names and implementation. Use whenever code, diffs, plans, branches, or MR links need review — even if user doesn't say 'skill'."
 metadata:
   type: code-review
   author: principal-frontend-architect
@@ -12,6 +12,8 @@ metadata:
 
 - **Process, evidence bar, labels, output** → code-review-principal. Do not deviate.
 - **Depth on a specific language/framework/security/perf/architecture question** → pull from code-review-skill's `reference/` guides (paths below), then fold the finding back into code-review-principal's label scheme. Never emit code-review-skill's own labels (🔴/🟡/🟢/`[blocking]`/`[nit]`/etc.) — those are a different skill's convention and are not used here.
+- **Phase 2c (flow brief + diagram)** is unique to code-review-enhanced — code-review-principal has no equivalent phase. It sits between code-review-principal's Phase 2b and Phase 3, described in full below.
+- **Phases 3c (deprecation/removal challenge) and 3d (terminology consistency)** are also code-review-enhanced-only — code-review-principal has neither. They run as focused traces inside Phase 3, alongside 3b.
 
 ## Comm style
 
@@ -40,18 +42,33 @@ Concision comes from cutting redundant clauses, not grammar words.
 ## Boot sequence
 
 1. Detect guidelines: `CLAUDE.md` → `AGENTS.md` → `docs/ARCHITECTURE.md` (repo root, then any subdirectory-scoped copy nearer each changed file). Read the **full file**, not a skim. Extract every enforceable rule into a numbered checklist (see Phase 3a) — a rule that isn't on the checklist will not get checked later. Missing entirely → use FE/eng baselines, say so in the output preamble.
-2. Prompt user: current branch, target branch (guessed from origin/HEAD), confirm review
-3. Fetch diff → infer intent → build harness checklist (3a) → assess (4 checks + reference-guide lookup) → trace blast radius → verify lines → output
+2. Input is a GitLab MR link → resolve it to a branch first (Phase 0) before anything else.
+3. Prompt user: current branch, target branch (guessed from origin/HEAD, or from the resolved MR if Phase 0 ran), confirm review
+4. On confirmation: sync the branch and pull MR discussion (Phase 1.5) → fetch diff → infer intent → **produce flow brief + diagram (2c, code-review-enhanced only)** → build harness checklist (3a) → assess (4 checks + reference-guide lookup) → run focused traces (blast radius 3b, deprecation 3c, terminology 3d) → verify lines → output
 
-**Never prompt for MR description / ticket / context.** Intent is inferred (Phase 2b). Zero friction.
+**Never prompt the user for MR description / ticket / context.** Intent is inferred (Phase 2b). MR discussion is pulled automatically (Phase 1.5), not asked for. Zero friction.
 
 ---
 
 ## Workflow
 
+### Phase 0: MR link input (optional)
+
+Only runs when the user's message contains a merge request URL (self-hosted GitLab pattern: `https://<host>/<namespace>/<project>/-/merge_requests/<iid>`). No link → skip straight to Phase 1.
+
+1. Parse `host`, `project path` (between host and `/-/merge_requests/`), and `iid` from the URL.
+2. Check MCP readiness: `mcp__gitlab__health_check` (fall back to `mcp__gitlab__whoami`).
+   - Fails / not authenticated → tell the user the GitLab MCP server is unreachable, so the link can't be resolved automatically. Ask them to `git checkout` the branch themselves and re-run, or fix the MCP connection. **Stop** — do not guess a branch name.
+   - OK → continue.
+3. `mcp__gitlab__get_merge_request` on that project/iid → get `source_branch`, `target_branch`, `iid`, `web_url`, `state`.
+4. Feed `source_branch` as the current branch and `target_branch` as the target into Phase 1 — the confirmation prompt still runs, unchanged, even though both values came from the MR instead of local git.
+5. Remember `iid` / `web_url` / project path for Phase 1.5 and Phase 11 — no need to re-derive them later.
+
+MR merged/closed → still resolvable (state is shown, not blocked) — reviewing a closed MR's final diff is a legitimate use case. Only Publish (Phase 11) cares about `state=opened`.
+
 ### Phase 1: Branch confirmation
 
-Detect current + default branch (via `git branch -a`, `git rev-parse --abbrev-ref origin/HEAD`).
+Detect current + default branch (via `git branch -a`, `git rev-parse --abbrev-ref origin/HEAD`), unless Phase 0 already supplied both.
 
 Prompt:
 ```
@@ -59,6 +76,17 @@ Current: <branch> | Target: <target> | Confirm? [y/n]
 ```
 
 User can override target. Default → origin/HEAD.
+
+### Phase 1.5: Branch sync + MR discussion — mandatory after confirmation
+
+Runs once, right after the user confirms in Phase 1, regardless of whether the branch came from an MR link (Phase 0) or was already checked out. Diff collection (Phase 2) must not start until this finishes.
+
+1. **Get on the right branch.** Currently on the confirmed branch → skip. Otherwise: `git fetch origin <branch>`, then check out — `git switch <branch>` if a local branch already exists, else `git switch -c <branch> origin/<branch>`.
+2. **Pull latest.** `git fetch origin <branch>` then `git pull --ff-only origin <branch>`. Non-fast-forward (local commits diverge from remote) → do not force anything — tell the user the branch has local commits not on origin, ask them to resolve it (rebase/reset) manually, then stop.
+3. **Resolve the MR**, if Phase 0 didn't already hand one over: same lookup as `references/gitlab-publish.md` Step 3 — `mcp__gitlab__list_merge_requests` scoped to the project, filtered by `source_branch` = the confirmed branch. Zero or ambiguous results here are non-fatal (unlike Publish) — just means no discussion to pull; continue to step 4 with nothing fetched.
+4. **Pull MR discussion.** MR resolved (from Phase 0 or step 3) → `mcp__gitlab__mr_discussions` (or `mcp__gitlab__get_merge_request_notes`) for that `iid`.
+   - MCP unreachable or the call errors → **do not break the review.** Print one line: `GitLab MCP unreachable — reviewing without MR discussion context.` and continue to Phase 2 with no discussion loaded.
+   - Succeeds → hold the discussion (author/reviewer comments, resolved/unresolved state) as extra context for Phase 2b (intent) and Phase 4.5-style awareness — a point already raised and resolved in discussion is a signal to not re-flag it, not a rule to cite in output.
 
 ### Phase 2: Diff collection
 
@@ -93,6 +121,40 @@ No user input. Derive intent from, in order:
 
 Write intent to yourself in one line. Use it to prioritize, **not** to justify findings. A finding is never valid because "it doesn't match inferred intent" — inference is not evidence. See Phase 4 evidence bar.
 
+### Phase 2c: Flow brief + diagram — code-review-enhanced only, always runs
+
+Not part of code-review-principal. Purpose: give the reviewer a verified mental model of what the MR actually does, before any findings — orientation, not assessment. Stays separate from Phase 2b: 2b is your own private one-liner for prioritizing; this is a public, detailed, user-facing deliverable. Runs on every review, unconditionally — no opt-in needed.
+
+**Output has two parts, always in this order:**
+
+1. **Numbered points** — plain-English walk-through of what the MR does, in the order a user/request would actually hit it. Always produced, never skipped — even a pure-refactor or config-only MR gets a numbered summary of what changed and why.
+2. **One mermaid `sequenceDiagram`, `autonumber` always on** — attempted whenever the diff has any request/response, state-transition, or UI-flow shape to it. Genuinely diagram-less diffs (dependency bump, pure config, isolated data-layer change with no caller-visible flow) get one explicit line instead: `Flow diagram: not applicable — <one clause why>`. Never force a diagram onto a diff that has no flow, and never silently omit one that does.
+
+**Diagram convention — locked, do not deviate:**
+
+- **Participants are actors/components only** — `User`, `Home Page`, `Recommendation Detail Page`, `Backend Service`, `Liveness SDK`, etc. Never an endpoint path, a storage key, or a variable name as a participant.
+- **Endpoints, storage ops, and variables live in the message text or a `Note`**, not the participant list — e.g. `Detail->>Backend: POST /recommendation/confirm { orderId }`, `Note over Detail: writes orderId + bankInfo to localStorage`.
+- **Prune variables to the ones that matter** — only what actually drives a later branch or step (`orderId`, `rejectReason`, `faceMatchId`, `contractH5Path`-style values). Skip internal param shapes that don't affect control flow (`deviceInfo`, `bankInfo` internals) unless a branch depends on them.
+- **`autonumber` always on**, so a reviewer can cross-reference a diagram step against the numbered-points brief above it.
+
+**One diagram, always — even for multiple flows.** If the MR bundles more than one distinct flow (e.g. a card-tap flow, a confirm-branch flow, and a separate skip-resume handoff), segment them inside the *same* diagram using `rect` blocks with a `Note` naming each section — never split into multiple diagrams. Cap at **6 `rect` sections**. Beyond the cap, diagram the first 6 and fall back to numbered-points-only for the rest, with one line stating the overflow (same pattern as Phase 3b's blast-radius cap):
+```
+Flow diagram capped — showed 6 of <N> flows. Remaining flows described in numbered points only.
+```
+
+**Color coding — new vs existing, mandatory verification, no guessing:**
+
+- **Color by behavioral novelty, not by whether the diff literally touched the line.** A hunk that only renames, extracts, or reorders with no observable behavior change stays gray/existing, even though the diff shows it as changed. Only color green/new where a genuinely new capability, branch, or side effect was introduced. A naive "diff-touched = green" rule is explicitly wrong here — it paints mechanical refactors as new business logic and defeats the entire purpose of this phase.
+- **Granularity is line/hunk-level, never file-level.** A modified (not newly-added) file routinely mixes both — e.g. a pre-existing CTA button (existing) that a new handler wires up for the first time (new) in the same file. File-level "existed before → all gray" is provably wrong on exactly the files that matter most.
+- **Every color label must be verified against the base SHA before it ships** — same evidence bar as Phase 6's line verification for findings. Check with `git show <base_sha>:<path>` (does this file/behavior exist before the MR?) and `git diff <base_sha> <head_sha> -- <path>` (is this specific hunk new or a no-op refactor?). A claim that can't be verified this way does not get a color — render that step neutral/uncolored rather than guess.
+- Suggested rendering: `rect rgba(150,150,150,0.15)` + `Note` for existing sections, `rect rgba(80,180,120,0.15)` + `Note` for new sections. Consistent colors across the whole diagram.
+
+**Reuse across phases (informal, no formal handoff).** Whatever Phase 2c already verified about a file (new file vs. modified, which specific hunk is new behavior) is fair game to reuse in Phase 3 / Phase 3b instead of re-deriving from scratch — same norm as the Phase 3a checklist persisting as working notes through Phase 3. This is a convenience, not a required data contract — don't build tooling around it.
+
+**Scope boundaries:**
+- **Chat-only.** Never enters the Phase 11 publish flow. Phase 11 posts numbered findings to GitLab; the flow brief is orientation for the reviewer, not a defect to report, and mixing the two blurs "what changed" with "what's wrong." `references/gitlab-publish.md` has no picker entry for it and should not be given one.
+- **Not subject to Phase 7's GitLab-paste blank-line rules** — those exist to stop GitLab's markdown renderer from collapsing plain paragraph text, and don't apply here since the diagram lives inside a fenced ` ```mermaid ` block (fenced content renders verbatim regardless of surrounding blank lines) and the numbered points are chat-only prose, not a GitLab comment payload.
+
 ### Phase 3a: Harness checklist — mandatory before assessment
 
 Detecting CLAUDE.md/AGENTS.md is not enough — a rule that was read but never explicitly checked against the diff is the failure mode this phase exists to prevent.
@@ -110,49 +172,18 @@ Run all 4 per file. Any check can produce any label.
 
 1. **HARNESS** — run the Phase 3a checklist against this file; every `violated` entry is a finding. Typical categories: layer violations, import direction, TS strict (`any`, `type` vs `interface`), testing trophy, naming (kebab-case, shadowing), simplicity (nesting, guard clauses, YAGNI), perf (lazy load, specific imports). The checklist is authoritative — do not additionally invent HARNESS findings that aren't traceable to a numbered rule.
 2. **FE** — React hooks (deps, stale closures), composition (prop drilling, memo abuse), CSS/Tailwind, a11y (ARIA, semantic)
-3. **LOGIC** — business logic impact + behavior-affecting engineering issues. See Phase 3b.
+3. **LOGIC** — business logic impact + behavior-affecting engineering issues. See Phase 3b (blast radius), 3c (deprecation/removal), 3d (terminology).
 4. **NITPICK** — dead code, DRY, comment noise, minor simplification, naming
+
+Phases 3b–3d are focused traces that feed these same labels — run them after the 4 checks, not instead of them.
 
 Engineering best practices split by consequence, not by category:
 - Behavior-affecting (swallowed error, missing error boundary, race, unhandled rejection, lost await, silent catch) → **LOGIC**
 - Cosmetic / maintainability (dead code, DRY, comment noise) → **NITPICK**
 
-**Reference-guide lookup.** Before finalizing a HARNESS/FE/LOGIC finding, if the file's language/framework or the issue's topic has a dedicated guide, check it for the specific pattern/anti-pattern name and cite it as evidence or phrasing — do not invent a check that isn't in these guides' spirit, and do not adopt their severity labels.
+**Reference-guide lookup.** Before finalizing a HARNESS/FE/LOGIC finding, if the file's language/framework or the issue's topic has a dedicated `code-review-skill` guide, open it, check for the specific pattern/anti-pattern name, and cite it as evidence or phrasing — do not invent a check outside these guides' spirit, and do not adopt their severity labels.
 
-| Trigger | Guide |
-|---|---|
-| `.tsx`/`.jsx`, hooks, RSC | `code-review-skill/reference/react.md` |
-| `.vue` | `code-review-skill/reference/vue.md` |
-| Angular (`.ts` + decorators, signals) | `code-review-skill/reference/angular.md` |
-| Svelte / SvelteKit | `code-review-skill/reference/svelte.md` |
-| `.rs` | `code-review-skill/reference/rust.md` |
-| Plain TS (non-FE-specific) | `code-review-skill/reference/typescript.md` |
-| `.java` (17/21) | `code-review-skill/reference/java.md` |
-| `.java` (8 / javax.*) | `code-review-skill/reference/java8.md` |
-| `.php` | `code-review-skill/reference/php.md` |
-| `.rb` / Rails | `code-review-skill/reference/ruby.md` |
-| `.py` (general) | `code-review-skill/reference/python.md` |
-| Django/DRF | `code-review-skill/reference/django.md` |
-| FastAPI | `code-review-skill/reference/fastapi.md` |
-| `.go` | `code-review-skill/reference/go.md` |
-| `.cs` / .NET | `code-review-skill/reference/csharp.md` |
-| `.kt` / Android | `code-review-skill/reference/kotlin.md` |
-| `.swift` | `code-review-skill/reference/swift.md` |
-| NestJS | `code-review-skill/reference/nestjs.md` |
-| `.c` | `code-review-skill/reference/c.md` |
-| `.cpp`/`.hpp` | `code-review-skill/reference/cpp.md` |
-| `.zig` | `code-review-skill/reference/zig.md` |
-| `.css`/`.less`/`.scss` | `code-review-skill/reference/css-less-sass.md` |
-| Qt/QML | `code-review-skill/reference/qt.md` |
-| Cross-cutting: architecture-scale change | `code-review-skill/reference/architecture-review-guide.md` |
-| Cross-cutting: perf-sensitive path | `code-review-skill/reference/performance-review-guide.md` |
-| Cross-cutting: auth/input/user-data handling | `code-review-skill/reference/security-review-guide.md`, `reference/cross-cutting/sql-injection-prevention.md`, `reference/cross-cutting/xss-prevention.md` |
-| Cross-cutting: any language, generic anti-patterns | `code-review-skill/reference/code-quality-universal.md`, `reference/common-bugs-checklist.md` |
-| Cross-cutting: loops over DB/API calls | `code-review-skill/reference/cross-cutting/n-plus-one-queries.md` |
-| Cross-cutting: try/catch, error propagation | `code-review-skill/reference/cross-cutting/error-handling-principles.md` |
-| Cross-cutting: async/goroutine/actor code | `code-review-skill/reference/cross-cutting/async-concurrency-patterns.md` |
-
-Full paths resolve under `~/.claude/skills/`. Only open a guide when a finding is already suspected — do not read all of them speculatively.
+The full trigger → guide table (all languages, frameworks, and cross-cutting topics) is in **`references/language-guides.md`**. Open it only when a finding is already suspected — never read the guides speculatively. A guide entry matching a finding is not itself evidence; the Phase 4 evidence bar still applies.
 
 ### Phase 3b: LOGIC check — blast radius trace
 
@@ -177,6 +208,36 @@ Wide blast radius — spot-checked 15 of <M> call sites for <symbol>. Recommend 
 ```
 
 **Invariant checks** (cheap, high value): for each changed guard/condition, ask — is there a matching guard elsewhere that is now inconsistent? e.g. status checked in 3 places, diff changes 1.
+
+### Phase 3c: Deprecation & removal check — code-review-enhanced only, always runs
+
+Trigger: the diff deletes or `@deprecated`-marks a **shared / exported** thing — fn, class, component, hook, exported const, API route, GraphQL/DB field, config key, feature flag, env var, event topic, i18n key, public type. Purely local symbols (never imported elsewhere) → skip.
+
+Per symbol:
+
+1. **Count users.** `grep -rn '<name>' <src>` across the repo + sibling packages. Note count and spread (one feature vs many, test-only vs production).
+2. **Cleanup complete?** Every in-repo caller updated in this same diff. A leftover reference → `[LOGIC]`, cite the `file:line` still calling it — that is a build / runtime break.
+3. **Safe?** Look for surface the diff can't see — other repos, persisted rows, bookmarked URLs, cached configs, external clients. Hard removal + external surface + no deprecation window → `[QUESTION]`: "`X` removed outright; N in-repo callers plus likely external users — deprecate-then-remove instead?"
+4. **Necessary?** Removal not required by the MR's stated intent, deleting widely-used code, with no named replacement → `[QUESTION]`. If a lower-risk path exists, name it: keep a thin re-export / alias, `@deprecated` tag + follow-up ticket, or phase it out behind a flag.
+
+Skip clean removals of dead, single-caller, internal code — no finding. Raise something only when it is shared surface **and** (leftover callers OR no migration path OR churn with no stated reason). Caps as Phase 3b — 10 symbols, 15 call sites; exceeded → one line, recommend full grep before merge.
+
+### Phase 3d: Terminology consistency check — code-review-enhanced only, always runs
+
+Trigger: a hunk adds or edits a **named multi-value construct** — a boolean/enum condition, a union or enum type, an object/map used as a lookup, a `switch`, a group of related identifiers (file names, keys, route segments, analytics event names), or a domain term that also appears in the guideline glossary.
+
+Three mismatches to check:
+
+1. **Name vs contents.** The identifier's scope must match what it actually covers. `isDriver || isMerchant` feeding something called `driverDeductionHistory` / `driver-deduction-history.ts` — the name says "driver" but merchants pass through it too. Flag a name narrower, broader, or a different domain than the values it holds.
+2. **Name vs implementation.** An enum member, flag, or key whose name asserts one behavior while the code does another — `ENABLE_CACHE` that also swaps the transport; `isReadOnly` that still allows one write path.
+3. **Vocabulary drift.** One concept under two names within the diff, or a name that contradicts the settled term in CLAUDE.md / AGENTS.md / surrounding code (diff says `merchant`, the rest of the module says `seller`).
+
+Label:
+- Cosmetic, no wrong behavior reachable → `[NITPICK]`, one line, suggested rename.
+- A later reader would plausibly trust the misleading name and act on it (filters `driver-*`, silently drops merchant rows) → `[LOGIC]`, cite the consumer line that would break.
+- Unclear whether the name or the implementation is the mistake → `[QUESTION]`, both readings laid out.
+
+Real conflicts only — this is not a licence for a personal-preference naming pass (see Persona notes).
 
 ### Phase 4: Confidence & evidence bar
 
@@ -251,155 +312,28 @@ Within a file, order: `CRITICAL` → `LOGIC` → `HARNESS` → `FE` → `NITPICK
 
 When in doubt, over-space rather than under-space: two adjacent lines with no blank line between them will render as one run-on sentence in GitLab.
 
-**Preamble.** When any `[QUESTION]` is emitted, define it once before the findings block, or the label reads as a weak finding. Blank line after it before the first file header:
-```
-`[QUESTION]` = product-judgment doubt only you can resolve, not a defect. Listed last in each file. Not counted in the totals or the score.
+**Finding forms.** Short form (one line: `<i>.<j>) L<line> [<LABEL>] <issue> → <fix>`), expanded form (≤4 bullets, ≤10 lines, ≤1 `Ref:`), and the `[QUESTION]` expanded structure — full templates, the `[QUESTION]` preamble text, and a complete worked example with GitLab blank lines shown verbatim are in **`references/output-format.md`**. Read it before emitting the first output.
 
-```
-
-**Short form (default)** — one line each, but insert a **blank line between consecutive short-form findings** in the same file (see GitLab paste formatting above) — without it they render as one merged sentence:
-```
-<i>.<j>) L<line> [<LABEL>] <issue> → <fix>
-
-<i>.<j+1>) L<line> [<LABEL>] <issue> → <fix>
-```
-
-**Expanded form** — when the explanation does not fit one line. Hard caps: **≤4 bullets, ≤10 lines total before/after, ≤1 reference.** Blank line after the headline and blank line before `Ref:` are mandatory, not optional whitespace:
-```
-<i>.<j>) L<line> [<LABEL>] <one-line headline>
-
-  - <point>
-  - <point>
-
-  ```ts
-  // Before
-  ...
-  // After
-  ...
-  ```
-
-  Ref: <path:line | doc URL | code-review-skill guide path>
-```
-
-`[NITPICK]` is always one line. Never expanded.
-
-**`[QUESTION]` may use expanded form** — the opposite of NITPICK. A one-line question is usually too vague to answer. Structure, in order:
-1. What the code now does / what changed
-2. Why it is ambiguous — the competing readings
-3. The concrete options
-4. Why it is a question and not a finding
-5. Cross-link to a related finding if the answer changes that finding's severity
-
-Same caps as any expanded finding: ≤4 bullets, ≤1 reference.
-
-Soft cap 5 questions per review.
-
-Example (blank lines shown exactly as they must appear when pasted into GitLab):
-```
-1) src/features/financing/hooks/use-application.ts
-
-  1.1) L34-38 [CRITICAL][LOGIC] Guard flipped: cancelled applications now editable
-
-    - Was `status === 'active'`, now `status !== 'draft'` → 'cancelled' passes
-    - `submit-button.tsx:22` renders enabled off this hook → user can submit a cancelled application
-    - Parallel guard at `application-list.tsx:88` still uses `=== 'active'` → inconsistent
-
-    ```ts
-    // After
-    if (status !== 'active') return { editable: false };
-    ```
-
-    Ref: src/features/financing/utils/status.ts:14
-
-  1.2) L56  [HARNESS] Missing dep in useEffect → stale `applicationId` closure
-
-    Ref: code-review-skill/reference/react.md#hooks
-
-  1.3) L12  [HARNESS] `any` on payload → `payload: ApplicationResponse`
-
-  1.4) L7   [NITPICK] Arrow fn export → `export default function useApplication()`
-
-  1.5) L44  [QUESTION] Draft applications now skip the fee recalculation — intended?
-
-    - The guard changed from `status === 'active'` to `status !== 'cancelled'`, so 'draft' now enters the branch that skips `recalculateFee()`
-    - Two readings: drafts genuinely have no fee yet (skipping is correct), or the fee should be recalculated on every edit and 'draft' was included by accident
-    - Options: keep as is, or narrow the guard back to an explicit allowlist of statuses
-    - Asked rather than flagged because both readings are internally consistent — only product knows which fee model applies to drafts
-```
+- `[NITPICK]` is always one line, never expanded.
+- `[QUESTION]` may use expanded form — a one-line question is usually too vague. Soft cap 5 per review.
 
 ### Phase 8: (removed — questions are `[QUESTION]` findings, emitted inline per file in Phase 7)
 
 ### Phase 9: Summary
 
-Blank line before this line, separating it from the last file's findings:
+Blank line before it, separating it from the last file's findings:
 ```
 CRITICAL N · LOGIC N · HARNESS N · FE N · NITPICK N — <N> files
 ```
-
-`[QUESTION]` is excluded from that line. If any were emitted, add a second line, on its own line with a blank line before it:
-```
-
-QUESTION N — <N> files
-```
-
-Zero findings → `Clean. No findings.` (still emit the QUESTION line if questions exist, blank-line separated as above).
+`[QUESTION]` is excluded — if any were emitted, add `QUESTION N — <N> files` on its own line, blank line before it. Zero findings → `Clean. No findings.` (still emit the QUESTION line if questions exist).
 
 ### Phase 10: Scoring
 
-Score after the summary, always — even on `Clean. No findings.` (all dimensions default 10, final 10.0, EXCELLENT).
+Score after the summary, **always** — even on `Clean. No findings.` (all dimensions 10, final 10.0, EXCELLENT).
 
-**Five dimensions, each 0–10, start at 10 and deduct per finding:**
+Five dimensions (Code quality, Maintainability, Best practices, Harness compliance, Security compliance), each starts at 10 and deducts per finding it is fed by; final score = mean, one decimal. Classification: `0.0–4.9` BAD · `5.0–7.9` GOOD · `8.0–10.0` EXCELLENT.
 
-| Dimension | Fed by |
-|---|---|
-| Code quality | LOGIC, NITPICK |
-| Maintainability | NITPICK, HARNESS (naming/simplicity/structure rules) |
-| Best practices | FE, HARNESS (pattern/convention rules) |
-| Harness compliance | HARNESS only |
-| Security compliance | any finding whose evidence cites `security-review-guide`, `sql-injection-prevention`, `xss-prevention`, or is otherwise auth/input/user-data related — default 10 untouched if none |
-
-A finding can feed more than one dimension (e.g. a HARNESS naming violation dents both Maintainability and Harness compliance). A dimension fed by zero findings stays at 10.
-
-**Per-finding deduction, applied once per fed dimension:**
-
-| Finding | Deduction |
-|---|---|
-| `[CRITICAL][*]` | −3 |
-| `[LOGIC]` (non-critical) | −1.5 |
-| `[HARNESS]` (non-critical) | −1 |
-| `[FE]` (non-critical) | −1 |
-| `[NITPICK]` | −0.5 |
-| `[QUESTION]` | 0 — never deducts from any dimension |
-
-Floor each dimension at 0. Final score = mean of the 5 dimensions, one decimal place.
-
-**Classification:**
-
-| Range | Label |
-|---|---|
-| 0.0 – 4.9 | BAD |
-| 5.0 – 7.9 | GOOD |
-| 8.0 – 10.0 | EXCELLENT |
-
-**Output block**, always last. Blank line before `Scoring` (separating it from the summary block above), and a blank line between every dimension line — each `Label: value` line is a standalone colon-led paragraph, per the GitLab paste formatting rule in Phase 7:
-```
-
-Scoring
-
-  Code quality:        <n>/10
-
-  Maintainability:      <n>/10
-
-  Best practices:       <n>/10
-
-  Harness compliance:   <n>/10
-
-  Security compliance:  <n>/10
-
-  Final: <n>/10 — <BAD|GOOD|EXCELLENT>
-```
-
-If a brief closing remark follows (e.g. a one-sentence fix direction), separate it from the Scoring block with a blank line. If that remark itself opens with a label (`Fix direction: ...`), the label and its sentence form their own standalone paragraph — never appended directly after the Scoring block on the same line or the line right after it with no blank line.
+The dimension→finding feed map, per-finding deduction values, and the exact `Scoring` output block (blank line between every colon-led line, per Phase 7) are in **`references/output-format.md`** — same file as the finding templates, so one read covers Phases 7, 9, and 10.
 
 ### Phase 11: Publish (optional) — mandatory prompt, optional action
 
@@ -440,6 +374,15 @@ Nothing verifiable → **omit the reference.** A missing ref beats a dead one.
 - Unclear scope → default to FE/eng rules; unsure → NITPICK or drop
 - Doubt needs product knowledge, not more code reading → `[QUESTION]`, never a hedged LOGIC finding
 - No matching code-review-skill guide for the file's language → fall back to the 4 checks unaided, do not stall
+- MR link given but MCP unreachable (Phase 0) → tell user, stop; don't guess the branch
+- Branch resolved but MR discussion fetch fails (Phase 1.5) → warn inline, continue review without it — never blocks
+- Branch has local commits not on origin (Phase 1.5 pull) → tell user, stop; never force-push/reset over local work
+- Diff has no diagrammable flow (config/dependency/pure data-layer change) → Phase 2c still emits numbered points, states `Flow diagram: not applicable` instead of forcing one
+- MR bundles more than 6 distinct flows (Phase 2c) → diagram the first 6 in one `rect`-segmented diagram, numbered-points-only for the rest, state the overflow count
+- Phase 2c can't verify a step's new/existing status against the base SHA → leave that step uncolored, never guess
+- Removed symbol is local/private and its one caller is updated in the same diff (Phase 3c) → no finding, cleaned up silently
+- Deprecation ships with its migration path in the same MR (Phase 3c) → note it in the flow brief, don't raise a QUESTION
+- Naming mismatch with no reachable wrong behavior (Phase 3d) → one-line NITPICK, never expanded, never a QUESTION
 - Publish-flow edge cases (unsupported provider, MR state, malformed pick/drop input, mid-flow race, duplicate posts, repeated failures) → all handled inline in `references/gitlab-publish.md`, not duplicated here
 
 ---
